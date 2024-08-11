@@ -1,2 +1,396 @@
 # INSTAGRAM-BOT-MESSENGER-VERSION-0.1
-INSTAGRAM BOT MESSENGER  VERSION 0.1
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
+from kivy.uix.popup import Popup
+from kivy.uix.filechooser import FileChooserIconView
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.checkbox import CheckBox
+from kivy.uix.actionbar import ActionBar, ActionView, ActionPrevious, ActionButton, ActionOverflow
+from kivy.uix.dropdown import DropDown
+import time
+from threading import Thread
+from kivy.uix.modalview import ModalView
+from kivy.utils import platform
+
+# Define translations
+LANGUAGES = {
+    'en': {
+        'login': 'Login',
+        'password': 'Password',
+        'message': 'Message',
+        'select_files': 'Select Files',
+        'no_file_selected': 'No file selected',
+        'delay': 'Delay (minutes)',
+        'max_messages': 'Max Messages',
+        'username_list': 'Username List',
+        'username_list_placeholder': 'Enter usernames separated by commas',
+        'start': 'Start',
+        'stop': 'Stop',
+        'menu': 'Menu',
+        'update': 'Update',
+        'reset': 'Reset',
+        'missing_fields': 'Please fill in all fields!',
+        'sending_started': 'Sending started...',
+        'sending_stopped': 'Sending stopped.',
+        'sending_complete': 'Sending complete!',
+        'status_label': 'Status: {} sent, Time: {}',
+        'api_key': 'API Key',
+        'api_key_placeholder': 'Enter your Instagram API key',
+        'api_key_submit': 'Submit',
+        'api_key_success': 'API Key Verified Successfully!',
+        'api_key_failure': 'API Key Verification Failed!',
+        'current_version': 'Current version: {}',
+        'version_check': 'Checking for updates...',
+        'version_updated': 'Bot updated to version {}!',
+        'version_not_updated': 'Bot is already up-to-date.',
+        'version_error': 'Error checking for updates: {}',
+        'language': 'Language',
+    },
+    'uk': {
+        'login': 'Логін',
+        'password': 'Пароль',
+        'message': 'Повідомлення',
+        'select_files': 'Вибрати файли',
+        'no_file_selected': 'Файл не вибраний',
+        'delay': 'Затримка (хв)',
+        'max_messages': 'Макс. повідомлень',
+        'username_list': 'Список користувачів',
+        'username_list_placeholder': 'Введіть імена користувачів через кому',
+        'start': 'Старт',
+        'stop': 'Стоп',
+        'menu': 'Меню',
+        'update': 'Оновити',
+        'reset': 'Скинути',
+        'missing_fields': 'Будь ласка, заповніть всі поля!',
+        'sending_started': 'Відправлення розпочато...',
+        'sending_stopped': 'Відправлення зупинено.',
+        'sending_complete': 'Відправлення завершено!',
+        'status_label': 'Статус: {} відправлено, Час: {}',
+        'api_key': 'API ключ',
+        'api_key_placeholder': 'Введіть API ключ Instagram',
+        'api_key_submit': 'Подати',
+        'api_key_success': 'API ключ успішно верифіковано!',
+        'api_key_failure': 'Помилка верифікації API ключа!',
+        'current_version': 'Поточна версія: {}',
+        'version_check': 'Перевірка оновлень...',
+        'version_updated': 'Бот оновлено до версії {}!',
+        'version_not_updated': 'Бот вже оновлений.',
+        'version_error': 'Помилка перевірки оновлень: {}',
+        'language': 'Мова',
+    }
+}
+
+class FileChooserPopup(Popup):
+    def __init__(self, callback, **kwargs):
+        super(FileChooserPopup, self).__init__(**kwargs)
+        self.title = 'Select Files'
+        self.size_hint = (0.9, 0.9)
+        self.callback = callback
+
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        self.filechooser = FileChooserIconView(multiselect=True)
+        self.filechooser.filters = ['*.jpg', '*.png', '*.gif', '*.mp4', '*.mp3']
+        self.filechooser.bind(on_selection=self.update_file_list)
+
+        self.file_layout = BoxLayout(orientation='vertical', spacing=5, size_hint_y=None)
+        self.file_layout.bind(minimum_height=self.file_layout.setter('height'))
+        self.file_scroll_view = ScrollView(size_hint=(1, 0.8))
+        self.file_scroll_view.add_widget(self.file_layout)
+
+        layout.add_widget(self.filechooser)
+        layout.add_widget(self.file_scroll_view)
+
+        confirm_button = Button(text='Select', size_hint_y=None, height=50)
+        confirm_button.bind(on_press=self.confirm_selection)
+        close_button = Button(text='Close', size_hint_y=None, height=50)
+        close_button.bind(on_press=self.dismiss)
+
+        layout.add_widget(confirm_button)
+        layout.add_widget(close_button)
+
+        self.add_widget(layout)
+        self.update_file_list()
+
+    def update_file_list(self, *args):
+        self.file_layout.clear_widgets()
+        for file in self.filechooser.selection:
+            file_name = file.split('/')[-1]
+            file_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=40)
+            file_label = Label(text=file_name, size_hint_x=0.8)
+            file_check = CheckBox(size_hint_x=0.2)
+            file_box.add_widget(file_label)
+            file_box.add_widget(file_check)
+            self.file_layout.add_widget(file_box)
+
+    def confirm_selection(self, instance):
+        selected_files = [file for file in self.filechooser.selection if file]
+        self.callback(selected_files)
+        self.dismiss()
+
+class ApiKeyPopup(Popup):
+    def __init__(self, verify_api_key_callback, **kwargs):
+        super(ApiKeyPopup, self).__init__(**kwargs)
+        self.title = 'API Key'
+        self.size_hint = (0.8, 0.4)
+        self.verify_api_key_callback = verify_api_key_callback
+
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        self.api_key_input = TextInput(hint_text=self.translate('api_key_placeholder'), size_hint_y=None, height=40)
+        submit_button = Button(text=self.translate('api_key_submit'), size_hint_y=None, height=50)
+        submit_button.bind(on_press=self.submit_api_key)
+        close_button = Button(text='Close', size_hint_y=None, height=50)
+        close_button.bind(on_press=self.dismiss)
+
+        layout.add_widget(self.api_key_input)
+        layout.add_widget(submit_button)
+        layout.add_widget(close_button)
+
+        self.add_widget(layout)
+
+    def submit_api_key(self, instance):
+        api_key = self.api_key_input.text
+        self.verify_api_key_callback(api_key)
+        self.dismiss()
+
+    def translate(self, key):
+        return LANGUAGES.get(App.get_running_app().current_language, LANGUAGES['en']).get(key, key)
+
+class InstagramBotApp(App):
+    def __init__(self, **kwargs):
+        super(InstagramBotApp, self).__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        self.current_language = 'en'
+        self.api_key = None
+        self.is_sending = False
+        self.sent_messages = 0
+        self.total_messages = 0
+        self.start_time = None
+        self.selected_files = []
+        self.username_list = []
+
+    def build(self):
+        self.build_ui()
+        return self.layout
+
+    def build_ui(self):
+        self.layout.clear_widgets()
+
+        # Header
+        title = Label(text="INSTAGRAM BOT", size_hint_y=None, height=60, font_size=32, color=(1, 0, 0, 1))
+        self.layout.add_widget(title)
+
+        # Action Bar
+        action_bar = ActionBar(pos_hint={'top': 1}, size_hint_y=None, height=50)
+        action_view = ActionView()
+        action_previous = ActionPrevious(title="", with_previous=False)
+        action_view.add_widget(action_previous)
+        
+        action_overflow = ActionOverflow()
+        
+        lang_button = ActionButton(text=self.translate('language'))
+        lang_button.bind(on_press=self.open_language_selection)
+
+        api_key_button = ActionButton(text=self.translate('api_key'))
+        api_key_button.bind(on_press=self.open_api_key_popup)
+
+        update_button = ActionButton(text=self.translate('update'))
+        update_button.bind(on_press=self.check_for_updates)
+
+        reset_button = ActionButton(text=self.translate('reset'))
+        reset_button.bind(on_press=self.reset_fields)
+
+        action_overflow.add_widget(lang_button)
+        action_overflow.add_widget(api_key_button)
+        action_overflow.add_widget(update_button)
+        action_overflow.add_widget(reset_button)
+        action_view.add_widget(action_overflow)
+        action_bar.add_widget(action_view)
+        self.layout.add_widget(action_bar)
+
+        # Login Fields
+        login_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        login_label = Label(text=self.translate('login'))
+        self.login_input = TextInput()
+        login_layout.add_widget(login_label)
+        login_layout.add_widget(self.login_input)
+        self.layout.add_widget(login_layout)
+
+        # Password Fields
+        password_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        password_label = Label(text=self.translate('password'))
+        self.password_input = TextInput(password=True)
+        password_layout.add_widget(password_label)
+        password_layout.add_widget(self.password_input)
+        self.layout.add_widget(password_layout)
+
+        # Message Fields
+        message_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        message_label = Label(text=self.translate('message'))
+        self.message_input = TextInput()
+        self.message_input.bind(focus=self.on_message_input_focus)
+        message_layout.add_widget(message_label)
+        message_layout.add_widget(self.message_input)
+        self.layout.add_widget(message_layout)
+
+        # File Selection
+        file_select_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        select_files_button = Button(text=self.translate('select_files'))
+        select_files_button.bind(on_press=self.open_file_chooser)
+        self.file_label = Label(text=self.translate('no_file_selected'))
+        file_select_layout.add_widget(select_files_button)
+        file_select_layout.add_widget(self.file_label)
+        self.layout.add_widget(file_select_layout)
+
+        # Username List
+        username_list_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        username_list_label = Label(text=self.translate('username_list'))
+        self.username_list_input = TextInput(hint_text=self.translate('username_list_placeholder'))
+        username_list_layout.add_widget(username_list_label)
+        username_list_layout.add_widget(self.username_list_input)
+        self.layout.add_widget(username_list_layout)
+
+        # Delay and Max Messages Fields
+        delay_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        delay_label = Label(text=self.translate('delay'))
+        self.delay_input = TextInput(input_filter='int')
+        delay_layout.add_widget(delay_label)
+        delay_layout.add_widget(self.delay_input)
+
+        max_messages_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=50)
+        max_messages_label = Label(text=self.translate('max_messages'))
+        self.max_messages_input = TextInput(input_filter='int')
+        max_messages_layout.add_widget(max_messages_label)
+        max_messages_layout.add_widget(self.max_messages_input)
+
+        self.layout.add_widget(delay_layout)
+        self.layout.add_widget(max_messages_layout)
+
+        # Start and Stop Buttons
+        start_button = Button(text=self.translate('start'), size_hint_y=None, height=50, background_color=(0, 1, 0, 1))
+        start_button.bind(on_press=self.start_sending)
+        stop_button = Button(text=self.translate('stop'), size_hint_y=None, height=50, background_color=(1, 0, 0, 1))
+        stop_button.bind(on_press=self.stop_sending)
+        buttons_layout = BoxLayout(orientation='horizontal', spacing=10)
+        buttons_layout.add_widget(start_button)
+        buttons_layout.add_widget(stop_button)
+        self.layout.add_widget(buttons_layout)
+
+        # Status Label
+        self.status_label = Label(text=self.translate('status_label').format(0, '00:00:00'), size_hint_y=None, height=40)
+        self.layout.add_widget(self.status_label)
+
+    def open_file_chooser(self, instance):
+        file_chooser_popup = FileChooserPopup(self.set_selected_files)
+        file_chooser_popup.open()
+
+    def set_selected_files(self, files):
+        self.selected_files = files
+        self.file_label.text = ', '.join([file.split('/')[-1] for file in files]) if files else self.translate('no_file_selected')
+
+    def start_sending(self, instance):
+        if not all([self.login_input.text, self.password_input.text, self.message_input.text, self.delay_input.text, self.max_messages_input.text, self.username_list_input.text]):
+            self.show_message(self.translate('missing_fields'))
+            return
+        self.is_sending = True
+        self.sent_messages = 0
+        self.total_messages = int(self.max_messages_input.text)
+        self.start_time = time.time()
+        self.username_list = self.username_list_input.text.split(',')
+        Thread(target=self.send_messages).start()
+
+    def send_messages(self):
+        while self.is_sending and self.sent_messages < self.total_messages:
+            # Simulate sending a message
+            time.sleep(int(self.delay_input.text) * 60)
+            self.sent_messages += 1
+            self.update_status()
+        self.is_sending = False
+        self.show_message(self.translate('sending_complete'))
+
+    def update_status(self):
+        elapsed_time = time.strftime('%H:%M:%S', time.gmtime(time.time() - self.start_time))
+        self.status_label.text = self.translate('status_label').format(self.sent_messages, elapsed_time)
+
+    def stop_sending(self, instance):
+        self.is_sending = False
+        self.show_message(self.translate('sending_stopped'))
+
+    def reset_fields(self, instance):
+        self.login_input.text = ''
+        self.password_input.text = ''
+        self.message_input.text = ''
+        self.delay_input.text = ''
+        self.max_messages_input.text = ''
+        self.username_list_input.text = ''
+        self.file_label.text = self.translate('no_file_selected')
+        self.status_label.text = self.translate('status_label').format(0, '00:00:00')
+
+    def open_language_selection(self, instance):
+        lang_popup = ModalView(size_hint=(0.5, 0.5))
+        lang_layout = BoxLayout(orientation='vertical')
+        for lang in LANGUAGES.keys():
+            lang_button = Button(text=lang.upper(), size_hint_y=None, height=40)
+            lang_button.bind(on_press=lambda btn: self.set_language(btn.text.lower()))
+            lang_layout.add_widget(lang_button)
+        close_button = Button(text='Close', size_hint_y=None, height=40)
+        close_button.bind(on_press=lang_popup.dismiss)
+        lang_layout.add_widget(close_button)
+        lang_popup.add_widget(lang_layout)
+        lang_popup.open()
+
+    def set_language(self, language):
+        self.current_language = language
+        self.build_ui()
+
+    def open_api_key_popup(self, instance):
+        api_key_popup = ApiKeyPopup(self.verify_api_key)
+        api_key_popup.open()
+
+    def verify_api_key(self, api_key):
+        if api_key == "valid_key":
+            self.api_key = api_key
+            self.show_message(self.translate('api_key_success'))
+        else:
+            self.show_message(self.translate('api_key_failure'))
+
+    def check_for_updates(self, instance):
+        self.show_message(self.translate('version_check'))
+        # Simulate an update check
+        time.sleep(2)
+        self.show_message(self.translate('version_updated').format('2.0'))
+
+    def show_message(self, message):
+        popup = Popup(title='Info', content=Label(text=message), size_hint=(0.8, 0.4))
+        popup.open()
+
+    def on_message_input_focus(self, instance, value):
+        if value:
+            self.open_text_input_dialog(self.translate('message'), self.set_message_text)
+
+    def open_text_input_dialog(self, title, callback):
+        content = BoxLayout(orientation='vertical')
+        text_input = TextInput()
+        content.add_widget(text_input)
+        btn_layout = BoxLayout(size_hint_y=None, height=50)
+        save_button = Button(text='Save')
+        save_button.bind(on_press=lambda x: (callback(text_input.text), popup.dismiss()))
+        close_button = Button(text='Close')
+        close_button.bind(on_press=lambda x: popup.dismiss())
+        btn_layout.add_widget(save_button)
+        btn_layout.add_widget(close_button)
+        content.add_widget(btn_layout)
+        popup = Popup(title=title, content=content, size_hint=(0.8, 0.5))
+        popup.open()
+
+    def set_message_text(self, text):
+        self.message_input.text = text
+
+    def translate(self, key):
+        return LANGUAGES.get(self.current_language, LANGUAGES['en']).get(key, key)
+
+if __name__ == '__main__':
+    InstagramBotApp().run()
